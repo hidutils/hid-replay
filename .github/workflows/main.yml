@@ -4,15 +4,23 @@ on: [push, pull_request]
 jobs:
   test:
     name: cargo test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --quiet -y --no-install-recommends \
+          linux-libc-dev \
+          libclang-dev \
+          llvm
+
       - run: cargo test --all-features
 
   format:
     name: cargo format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
