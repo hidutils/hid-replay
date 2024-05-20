@@ -2,8 +2,10 @@
 name = "hid-replay"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+homepage = "https://github.com/hidutils"
+repository = "https://github.com/hidutils/hid-replay"
+description = "HID device emulation utility"
 
 [dependencies]
 anyhow = "1.0.82"
