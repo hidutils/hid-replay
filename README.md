@@ -9,8 +9,8 @@ This is a Rust reimplementation of hid-replay from
 
 # Installation
 
-`hid-replay` needs access to the `/dev/uhid` device and typically needs 
-to run as root. 
+`hid-replay` needs access to the `/dev/uhid` device and typically needs
+to run as root.
 
 The easiest is to install with cargo as root:
 
@@ -56,7 +56,7 @@ $ sudo hid-replay path/to/recording
 ### Allow access to the device to non-root users
 
 This is the least safe option as once read access is granted, any
-process can create virtual HID devices. This allows for malicious 
+process can create virtual HID devices. This allows for malicious
 interference with your running session.
 
 ```
@@ -64,7 +64,7 @@ $ cargo install hid-replay
 $ sudo chmod o+r /dev/uhid
 $ hid-replay path/to/recording
 ```
-It is recommended to remove these permissions once need for 
+It is recommended to remove these permissions once need for
 replaying is over:
 
 ```
