@@ -126,9 +126,25 @@ where
         }
     }
 
+    if rdesc.is_none() {
+        bail!("Recording is missing the Report Descriptor, cannot continue");
+    }
+    if name.is_none() {
+        writeln!(
+            stderr,
+            "WARNING: Recording is missing a device name, using built-in default"
+        )?;
+    }
+    if ids.is_none() {
+        writeln!(
+            stderr,
+            "WARNING: Recording is missing a product/vendor IDs, using built-in defaults"
+        )?;
+    }
+
     Ok(Recording {
-        name: name.unwrap(),
-        ids: ids.unwrap().into(),
+        name: name.unwrap_or("<missing device name>".into()),
+        ids: ids.unwrap_or([0, 0, 0]).into(),
         rdesc: rdesc.unwrap(),
         events,
     })
@@ -319,6 +335,50 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_missing_name() {
+        let mut stderr = Vec::new();
+        let lines = vec!["I: 1 2 3", "R: 3 02 03 04"]
+            .into_iter()
+            .map(String::from);
+        let recording = parse(lines, &mut stderr);
+        assert!(recording.is_ok());
+        let recording = recording.unwrap();
+        assert_eq!(recording.name, "<missing device name>");
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert_eq!(
+            stderr.trim(),
+            "WARNING: Recording is missing a device name, using built-in default"
+        )
+    }
+
+    #[test]
+    fn test_missing_id() {
+        let mut stderr = Vec::new();
+        let lines = vec!["N: some name", "R: 3 02 03 04"]
+            .into_iter()
+            .map(String::from);
+        let recording = parse(lines, &mut stderr);
+        assert!(recording.is_ok());
+        let recording = recording.unwrap();
+        assert_eq!(recording.ids, (0, 0, 0));
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert_eq!(
+            stderr.trim(),
+            "WARNING: Recording is missing a product/vendor IDs, using built-in defaults"
+        );
+    }
+
+    #[test]
+    fn test_fail_on_missing_rdesc() {
+        let mut stderr = Vec::new();
+        let lines = vec!["N: some name", "I: 1 2 4"]
+            .into_iter()
+            .map(String::from);
+        let recording = parse(lines, &mut stderr);
+        assert!(recording.is_err());
+    }
 
     #[test]
     fn test_parse_unknown_prefix() {
