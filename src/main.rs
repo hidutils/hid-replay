@@ -34,12 +34,31 @@ struct Event {
     bytes: Vec<u8>,
 }
 
+#[derive(Default)]
+struct RecordingBuilder {
+    name: Option<String>,
+    ids: Option<(u16, u16, u16)>,
+    rdesc: Option<Vec<u8>>,
+    events: Vec<Event>,
+}
+
 #[derive(Debug)]
 struct Recording {
     name: String,
     ids: (u16, u16, u16),
     rdesc: Vec<u8>,
     events: Vec<Event>,
+}
+
+impl Recording {
+    fn from_builder(builder: RecordingBuilder) -> Recording {
+        Recording {
+            name: builder.name.unwrap_or("<missing device name>".into()),
+            ids: builder.ids.unwrap_or((0, 0, 0)),
+            rdesc: builder.rdesc.unwrap(),
+            events: builder.events,
+        }
+    }
 }
 
 /// Decode a length-prefixed string of bytes, e.g.
@@ -125,18 +144,15 @@ fn parse<'a, I>(lines: I, mut stderr: impl std::io::Write) -> Result<Recording>
 where
     I: Iterator<Item = String>,
 {
-    let mut r_name: Option<String> = None;
-    let mut r_ids: Option<(u16, u16, u16)> = None;
-    let mut r_rdesc: Option<Vec<u8>> = None;
-    let mut r_events: Vec<Event> = vec![];
+    let mut builder = RecordingBuilder::default();
     let mut warned_prefixes: Vec<char> = vec![];
     for (lineno, line) in lines.enumerate() {
         match parse_line(&line).context("In line {lineno}")? {
             Match::Comment => {}
-            Match::Name(name) => r_name = Some(name),
-            Match::Id(ids) => r_ids = Some(ids),
-            Match::ReportDescriptor(rdesc) => r_rdesc = Some(rdesc),
-            Match::Event(event) => r_events.push(event),
+            Match::Name(name) => builder.name = Some(name),
+            Match::Id(ids) => builder.ids = Some(ids),
+            Match::ReportDescriptor(rdesc) => builder.rdesc = Some(rdesc),
+            Match::Event(event) => builder.events.push(event),
             Match::UnknownPrefix(prefix) => {
                 if !warned_prefixes.iter().any(|w| *w == prefix) {
                     writeln!(
@@ -149,28 +165,23 @@ where
         };
     }
 
-    if r_rdesc.is_none() {
+    if builder.rdesc.is_none() {
         bail!("Recording is missing the Report Descriptor, cannot continue");
     }
-    if r_name.is_none() {
+    if builder.name.is_none() {
         writeln!(
             stderr,
             "WARNING: Recording is missing a device name, using built-in default"
         )?;
     }
-    if r_ids.is_none() {
+    if builder.ids.is_none() {
         writeln!(
             stderr,
             "WARNING: Recording is missing a product/vendor IDs, using built-in defaults"
         )?;
     }
 
-    Ok(Recording {
-        name: r_name.unwrap_or("<missing device name>".into()),
-        ids: r_ids.unwrap_or((0, 0, 0)),
-        rdesc: r_rdesc.unwrap(),
-        events: r_events,
-    })
+    Ok(Recording::from_builder(builder))
 }
 
 fn hid_replay() -> Result<()> {
