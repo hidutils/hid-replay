@@ -70,7 +70,10 @@ where
     let mut ids: Option<[u16; 3]> = None;
     let mut rdesc: Option<Vec<u8>> = None;
     let mut events: Vec<Event> = vec![];
-    for line in lines {
+    for (lineno, line) in lines.enumerate() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         match line.split_once(' ') {
             Some(("N:", rest)) => name = Some(String::from(rest)),
             Some(("I:", rest)) => {
@@ -104,7 +107,7 @@ where
                     bytes,
                 });
             }
-            _ => bail!("Invalid or unknown line: {line}"),
+            _ => bail!("Line {lineno} is invalid or unknown: {line}"),
         }
     }
 
@@ -123,7 +126,6 @@ fn hid_replay() -> Result<()> {
     let lines = std::io::BufReader::new(f)
         .lines()
         .map_while(Result::ok)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| String::from(l.trim()));
     let mut recording = parse(lines)?;
 
