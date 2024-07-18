@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use std::io::BufRead;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 use uhid_virt::{Bus, OutputEvent, StreamError, UHIDDevice};
@@ -62,18 +62,15 @@ fn data_decode(str: &str) -> Result<(usize, Vec<u8>)> {
     Ok((length, bytes))
 }
 
-fn parse(path: &Path) -> Result<Recording> {
-    let f = std::fs::File::open(path)?;
-    let lines = std::io::BufReader::new(f).lines();
+fn parse<'a, I>(lines: I) -> Result<Recording>
+where
+    I: Iterator<Item = String>,
+{
     let mut name: Option<String> = None;
     let mut ids: Option<[u16; 3]> = None;
     let mut rdesc: Option<Vec<u8>> = None;
     let mut events: Vec<Event> = vec![];
-    for line in lines
-        .map_while(Result::ok)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(|l| String::from(l.trim()))
-    {
+    for line in lines {
         match line.split_once(' ') {
             Some(("N:", rest)) => name = Some(String::from(rest)),
             Some(("I:", rest)) => {
@@ -122,7 +119,13 @@ fn parse(path: &Path) -> Result<Recording> {
 fn hid_replay() -> Result<()> {
     let cli = Cli::parse();
 
-    let mut recording = parse(&cli.recording)?;
+    let f = std::fs::File::open(cli.recording)?;
+    let lines = std::io::BufReader::new(f)
+        .lines()
+        .map_while(Result::ok)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| String::from(l.trim()));
+    let mut recording = parse(lines)?;
 
     println!(
         "Device {:04X}:{:04X}:{:04X} - {}",
