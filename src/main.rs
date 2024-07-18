@@ -62,7 +62,7 @@ fn data_decode(str: &str) -> Result<(usize, Vec<u8>)> {
     Ok((length, bytes))
 }
 
-fn parse<'a, I>(lines: I) -> Result<Recording>
+fn parse<'a, I>(lines: I, mut stderr: impl std::io::Write) -> Result<Recording>
 where
     I: Iterator<Item = String>,
 {
@@ -70,6 +70,7 @@ where
     let mut ids: Option<[u16; 3]> = None;
     let mut rdesc: Option<Vec<u8>> = None;
     let mut events: Vec<Event> = vec![];
+    let mut warned_prefixes: Vec<char> = vec![];
     for (lineno, line) in lines.enumerate() {
         if line.is_empty() || line.starts_with('#') {
             continue;
@@ -107,6 +108,20 @@ where
                     bytes,
                 });
             }
+            Some((prefix, _)) => {
+                if prefix.len() == 2 && prefix.chars().nth(1).unwrap_or(' ') == ':' {
+                    let p = prefix.chars().next().unwrap();
+                    if !warned_prefixes.iter().any(|w| *w == p) {
+                        writeln!(
+                            stderr,
+                            "WARNING: Line {lineno}: Ignoring unknown prefix '{prefix}' in {line}"
+                        )?;
+                        warned_prefixes.push(p);
+                    }
+                } else {
+                    bail!("Line {lineno} is invalid or unknown: {line}");
+                }
+            }
             _ => bail!("Line {lineno} is invalid or unknown: {line}"),
         }
     }
@@ -127,7 +142,7 @@ fn hid_replay() -> Result<()> {
         .lines()
         .map_while(Result::ok)
         .map(|l| String::from(l.trim()));
-    let mut recording = parse(lines)?;
+    let mut recording = parse(lines, &mut std::io::stderr())?;
 
     println!(
         "Device {:04X}:{:04X}:{:04X} - {}",
@@ -298,5 +313,35 @@ fn main() -> ExitCode {
             eprintln!("Error: {e:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_unknown_prefix() {
+        let mut stderr = Vec::new();
+        let lines = vec!["N: some name", "I: 1 2 3", "R: 3 02 03 04", "X: blah"]
+            .into_iter()
+            .map(String::from);
+        let recording = parse(lines, &mut stderr);
+        assert!(recording.is_ok());
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert_eq!(
+            stderr.trim(),
+            "WARNING: Line 3: Ignoring unknown prefix 'X:' in X: blah"
+        );
+    }
+
+    #[test]
+    fn test_fail_invalid_prefix() {
+        let mut stderr = Vec::new();
+        let lines = vec!["N: some name", "I: 1 2 3", "R: 3 02 03 04", "xxx: blah"]
+            .into_iter()
+            .map(String::from);
+        let recording = parse(lines, &mut stderr);
+        assert!(recording.is_err());
     }
 }
