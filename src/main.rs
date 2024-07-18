@@ -62,80 +62,103 @@ fn data_decode(str: &str) -> Result<(usize, Vec<u8>)> {
     Ok((length, bytes))
 }
 
+enum Match {
+    Comment,
+    Name(String),
+    Id((u16, u16, u16)),
+    ReportDescriptor(Vec<u8>),
+    Event(Event),
+    UnknownPrefix(char),
+}
+
+fn parse_line(line: &str) -> Result<Match> {
+    if line.is_empty() || line.starts_with("#") {
+        return Ok(Match::Comment);
+    }
+    match line.split_once(' ') {
+        Some(("N:", rest)) => Ok(Match::Name(String::from(rest))),
+        Some(("I:", rest)) => {
+            let ids = rest
+                .split(' ')
+                .map(|s| u16::from_str_radix(s, 16))
+                .collect::<Result<Vec<u16>, _>>()?;
+            let ids: [u16; 3] = match ids.try_into() {
+                Ok(ids) => ids,
+                Err(_) => bail!("Failed to parse all ids"), // ? doesn't work for try_into()
+            };
+            Ok(Match::Id(ids.try_into()?))
+        }
+        Some(("R:", rest)) => Ok(Match::ReportDescriptor(
+            data_decode(rest).context("Invalid report descriptor")?.1,
+        )),
+        Some(("E:", rest)) => {
+            let Some((timestamp, rest)) = rest.split_once(' ') else {
+                bail!("Invalid event format, expected <timestamp> <length>, ...")
+            };
+            let Some((secs, usecs)) = timestamp.split_once('.') else {
+                bail!("Invalid timestamp format")
+            };
+            let secs = secs
+                .parse::<u64>()
+                .context(format!("Invalid timestamp string {secs}"))?;
+            let usecs = usecs
+                .parse::<u64>()
+                .context(format!("Invalid timestamp string {usecs}"))?;
+            let bytes = data_decode(rest).context("Invalid event format")?.1;
+            Ok(Match::Event(Event {
+                usecs: secs * 1_000_000 + usecs,
+                bytes,
+            }))
+        }
+        Some((prefix, _)) => {
+            if prefix.len() == 2 && prefix.ends_with(':') {
+                Ok(Match::UnknownPrefix(prefix.chars().next().unwrap()))
+            } else {
+                bail!("invalid or unknown: {line}");
+            }
+        }
+        _ => bail!("invalid or unknown: {line}"),
+    }
+}
+
 fn parse<'a, I>(lines: I, mut stderr: impl std::io::Write) -> Result<Recording>
 where
     I: Iterator<Item = String>,
 {
-    let mut name: Option<String> = None;
-    let mut ids: Option<[u16; 3]> = None;
-    let mut rdesc: Option<Vec<u8>> = None;
-    let mut events: Vec<Event> = vec![];
+    let mut r_name: Option<String> = None;
+    let mut r_ids: Option<(u16, u16, u16)> = None;
+    let mut r_rdesc: Option<Vec<u8>> = None;
+    let mut r_events: Vec<Event> = vec![];
     let mut warned_prefixes: Vec<char> = vec![];
     for (lineno, line) in lines.enumerate() {
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        match line.split_once(' ') {
-            Some(("N:", rest)) => name = Some(String::from(rest)),
-            Some(("I:", rest)) => {
-                ids = Some(
-                    rest.split(' ')
-                        .map(|s| u16::from_str_radix(s, 16).unwrap())
-                        .collect::<Vec<u16>>()
-                        .try_into()
-                        .unwrap(),
-                )
-            }
-            Some(("R:", rest)) => {
-                rdesc = Some(data_decode(rest).context("Invalid report descriptor")?.1)
-            }
-            Some(("E:", rest)) => {
-                let Some((timestamp, rest)) = rest.split_once(' ') else {
-                    bail!("Invalid event format, expected <timestamp> <length>, ...")
-                };
-                let Some((secs, usecs)) = timestamp.split_once('.') else {
-                    bail!("Invalid timestamp format")
-                };
-                let secs = secs
-                    .parse::<u64>()
-                    .context(format!("Invalid timestamp string {secs}"))?;
-                let usecs = usecs
-                    .parse::<u64>()
-                    .context(format!("Invalid timestamp string {usecs}"))?;
-                let bytes = data_decode(rest).context("Invalid event format")?.1;
-                events.push(Event {
-                    usecs: secs * 1_000_000 + usecs,
-                    bytes,
-                });
-            }
-            Some((prefix, _)) => {
-                if prefix.len() == 2 && prefix.chars().nth(1).unwrap_or(' ') == ':' {
-                    let p = prefix.chars().next().unwrap();
-                    if !warned_prefixes.iter().any(|w| *w == p) {
-                        writeln!(
-                            stderr,
-                            "WARNING: Line {lineno}: Ignoring unknown prefix '{prefix}' in {line}"
-                        )?;
-                        warned_prefixes.push(p);
-                    }
-                } else {
-                    bail!("Line {lineno} is invalid or unknown: {line}");
+        match parse_line(&line).context("In line {lineno}")? {
+            Match::Comment => {}
+            Match::Name(name) => r_name = Some(name),
+            Match::Id(ids) => r_ids = Some(ids),
+            Match::ReportDescriptor(rdesc) => r_rdesc = Some(rdesc),
+            Match::Event(event) => r_events.push(event),
+            Match::UnknownPrefix(prefix) => {
+                if !warned_prefixes.iter().any(|w| *w == prefix) {
+                    writeln!(
+                        stderr,
+                        "WARNING: Line {lineno}: Ignoring unknown prefix '{prefix}:' in {line}"
+                    )?;
+                    warned_prefixes.push(prefix);
                 }
             }
-            _ => bail!("Line {lineno} is invalid or unknown: {line}"),
-        }
+        };
     }
 
-    if rdesc.is_none() {
+    if r_rdesc.is_none() {
         bail!("Recording is missing the Report Descriptor, cannot continue");
     }
-    if name.is_none() {
+    if r_name.is_none() {
         writeln!(
             stderr,
             "WARNING: Recording is missing a device name, using built-in default"
         )?;
     }
-    if ids.is_none() {
+    if r_ids.is_none() {
         writeln!(
             stderr,
             "WARNING: Recording is missing a product/vendor IDs, using built-in defaults"
@@ -143,10 +166,10 @@ where
     }
 
     Ok(Recording {
-        name: name.unwrap_or("<missing device name>".into()),
-        ids: ids.unwrap_or([0, 0, 0]).into(),
-        rdesc: rdesc.unwrap(),
-        events,
+        name: r_name.unwrap_or("<missing device name>".into()),
+        ids: r_ids.unwrap_or((0, 0, 0)),
+        rdesc: r_rdesc.unwrap(),
+        events: r_events,
     })
 }
 
@@ -403,5 +426,18 @@ mod tests {
             .map(String::from);
         let recording = parse(lines, &mut stderr);
         assert!(recording.is_err());
+    }
+
+    #[test]
+    fn test_ids() {
+        assert!(parse_line("I: ").is_err());
+        assert!(parse_line("I: 0").is_err());
+        assert!(parse_line("I: 0 0").is_err());
+        assert!(parse_line("I: 0 0 0 0").is_err());
+
+        let result = parse_line("I: a b c").unwrap();
+        assert!(matches!(result, Match::Id((0xa, 0xb, 0xc))));
+        let result = parse_line("I: 0 1 2").unwrap();
+        assert!(matches!(result, Match::Id((0, 1, 2))));
     }
 }
