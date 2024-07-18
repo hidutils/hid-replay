@@ -67,7 +67,7 @@ impl Recording {
 /// |      |
 /// |      + bytes in hex
 /// +-- length in bytes, decimal
-fn data_decode(str: &str) -> Result<(usize, Vec<u8>)> {
+fn decode_length_prefixed_data(str: &str) -> Result<(usize, Vec<u8>)> {
     let Some((length, rest)) = str.split_once(' ') else {
         bail!("Invalid format, expected <length> [byte, byte, ...]");
     };
@@ -108,7 +108,9 @@ fn parse_line(line: &str) -> Result<Match> {
             Ok(Match::Id(ids.try_into()?))
         }
         Some(("R:", rest)) => Ok(Match::ReportDescriptor(
-            data_decode(rest).context("Invalid report descriptor")?.1,
+            decode_length_prefixed_data(rest)
+                .context("Invalid report descriptor")?
+                .1,
         )),
         Some(("E:", rest)) => {
             let Some((timestamp, rest)) = rest.split_once(' ') else {
@@ -123,7 +125,9 @@ fn parse_line(line: &str) -> Result<Match> {
             let usecs = usecs
                 .parse::<u64>()
                 .context(format!("Invalid timestamp string {usecs}"))?;
-            let bytes = data_decode(rest).context("Invalid event format")?.1;
+            let bytes = decode_length_prefixed_data(rest)
+                .context("Invalid event format")?
+                .1;
             Ok(Match::Event(Event {
                 usecs: secs * 1_000_000 + usecs,
                 bytes,
@@ -450,5 +454,44 @@ mod tests {
         assert!(matches!(result, Match::Id((0xa, 0xb, 0xc))));
         let result = parse_line("I: 0 1 2").unwrap();
         assert!(matches!(result, Match::Id((0, 1, 2))));
+    }
+
+    #[test]
+    fn test_length_prefixed_data_invalid() {
+        let result = decode_length_prefixed_data("0");
+        assert!(result.is_err());
+
+        let result = decode_length_prefixed_data("0 00");
+        assert!(result.is_err());
+
+        let result = decode_length_prefixed_data("1;01");
+        assert!(result.is_err());
+
+        let result = decode_length_prefixed_data("1 0001");
+        assert!(result.is_err());
+
+        let result = decode_length_prefixed_data("1 0x0001");
+        assert!(result.is_err());
+
+        let result = decode_length_prefixed_data("1 01 02");
+        assert!(result.is_err());
+
+        let result = decode_length_prefixed_data("3 01 02");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_length_prefixed_data_valid() {
+        let result = decode_length_prefixed_data("1 00");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), (1, vec![0]));
+
+        let result = decode_length_prefixed_data("1 01");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), (1, vec![1]));
+
+        let result = decode_length_prefixed_data("4 01 bc AF 10");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), (4, vec![0x01, 0xbc, 0xaf, 0x10]));
     }
 }
