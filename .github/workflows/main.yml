@@ -2,8 +2,7 @@ name: test suite
 on: [push, pull_request]
 
 jobs:
-  test:
-    name: cargo test
+  build-and-test:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -25,3 +24,40 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo fmt --check
+
+  release-build:
+     name: cargo build --release
+     runs-on: ubuntu-24.04
+     needs: [build-and-test]
+     steps:
+       - uses: actions/checkout@v4
+       - uses: dtolnay/rust-toolchain@stable
+       - name: Install dependencies
+         run: |
+           sudo apt-get update
+           sudo apt-get install --quiet -y --no-install-recommends \
+           linux-libc-dev \
+           libclang-dev \
+           llvm
+       - run: cargo build --release
+       - run: cp target/release/hid-replay .
+       - uses: actions/upload-artifact@v4
+         with:
+           name: hid-replay
+           path: |
+             hid-replay
+
+  create-release:
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [release-build]
+    permissions:
+      contents: write
+    steps:
+      - uses: dawidd6/action-download-artifact@v6
+        with:
+          name: hid-replay
+          skip_unpack: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: hid-replay.zip
