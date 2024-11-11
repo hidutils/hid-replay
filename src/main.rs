@@ -151,7 +151,7 @@ where
     let mut builder = RecordingBuilder::default();
     let mut warned_prefixes: Vec<char> = vec![];
     for (lineno, line) in lines.enumerate() {
-        match parse_line(&line).context("In line {lineno}")? {
+        match parse_line(&line).context(format!("In line {lineno}"))? {
             Match::Comment => {}
             Match::Name(name) => builder.name = Some(name),
             Match::Id(ids) => builder.ids = Some(ids),
