@@ -105,7 +105,7 @@ fn parse_line(line: &str) -> Result<Match> {
                 Ok(ids) => ids,
                 Err(_) => bail!("Failed to parse all ids"), // ? doesn't work for try_into()
             };
-            Ok(Match::Id(ids.try_into()?))
+            Ok(Match::Id(ids.into()))
         }
         Some(("R:", rest)) => Ok(Match::ReportDescriptor(
             decode_length_prefixed_data(rest)
@@ -144,7 +144,7 @@ fn parse_line(line: &str) -> Result<Match> {
     }
 }
 
-fn parse<'a, I>(lines: I, mut stderr: impl std::io::Write) -> Result<Recording>
+fn parse<I>(lines: I, mut stderr: impl std::io::Write) -> Result<Recording>
 where
     I: Iterator<Item = String>,
 {
