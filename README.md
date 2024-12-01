@@ -7,10 +7,21 @@ Typically the input is a recording created by [hid-recorder](https://github.com/
 This is a Rust reimplementation of hid-replay from
 [hid-tools](https://gitlab.freedesktop.org/libevdev/hid-tools/).
 
-# Installation
-
 `hid-replay` needs access to the `/dev/uhid` device and typically needs
 to run as root.
+
+# Installation
+
+A pre-built binary is available for our
+[releases](https://github.com/hidutils/hid-replay/releases). Simply download the
+`hid-replay.zip`, unpack it and you are good to go:
+```
+$ unzip hid-replay.zip
+$ chmod +x hid-replay
+$ sudo ./hid-replay
+```
+
+## Installation with `cargo`
 
 The easiest is to install with cargo as root:
 
