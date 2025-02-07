@@ -316,6 +316,32 @@ fn hid_replay() -> Result<()> {
         std::thread::sleep(Duration::from_millis(10));
     }
 
+    // hidraw nodes exist now, let's print them and the associated evdev nodes
+    // too.
+    //
+    // If there's a device with the same VID/PID we'll print that too, unfortunately
+    // we can't get the hidraw path from the uhid device we just created.
+    // Niche enough to not worry about.
+    let hidraw_glob = format!("{globstr}/hidraw/hidraw*");
+    glob::glob(&hidraw_glob)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .for_each(|path| {
+            println!("/dev/{}:", path.file_name().unwrap().to_string_lossy());
+
+            let evdev_glob = format!("{}/device/input/input*/event*", path.to_string_lossy());
+            glob::glob(&evdev_glob)
+                .unwrap()
+                .filter_map(|entry| entry.ok())
+                .for_each(|node| {
+                    let name: PathBuf = node.join("device").join("name");
+                    let node = node.file_name().unwrap().to_string_lossy();
+                    let name = std::fs::read_to_string(name).unwrap();
+                    let name = name.trim();
+                    println!("- /dev/input/{node}: \"{name}\"");
+                });
+        });
+
     let mut pos = 0i8;
     let mut direction = 1i8;
     loop {
