@@ -379,13 +379,29 @@ fn hid_replay() -> Result<()> {
                     std::thread::sleep(interval);
                 }
             }
-            print!("\r{1:0$}*{1:2$}", pos as usize, " ", 50 - pos as usize);
-            std::io::stdout().flush().unwrap();
-            uhid_device.write(&e.bytes)?;
-            pos += direction;
-            if pos % 49 == 0 {
-                direction *= -1;
+            if cli.verbose {
+                // Note: printing the event's original timestamp, not the current timestamp
+                // so it's easier to match the --verbose output with the recording.
+                println!(
+                    "\rE: {:06}.{:06} {} {}",
+                    e.usecs / 1000000,
+                    e.usecs % 1000000,
+                    e.bytes.len(),
+                    e.bytes
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                );
+            } else {
+                print!("\r{1:0$}*{1:2$}", pos as usize, " ", 50 - pos as usize);
+                pos += direction;
+                if pos % 49 == 0 {
+                    direction *= -1;
+                }
+                std::io::stdout().flush().unwrap();
             }
+            uhid_device.write(&e.bytes)?;
         }
         print!("\r{:50}\r", " ");
         std::io::stdout().flush().unwrap();
