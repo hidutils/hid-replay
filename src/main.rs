@@ -337,12 +337,21 @@ fn hid_replay() -> Result<()> {
             let target_time = Duration::from_micros(e.usecs);
             if target_time > elapsed {
                 let interval = target_time - elapsed;
-                if interval > Duration::from_secs(2) {
-                    let note = format!("***** Sleeping for {}s *****", interval.as_secs());
-                    print!("\r{:^50}", note);
-                    std::io::stdout().flush().unwrap();
+                if interval < Duration::from_secs(2) {
+                    std::thread::sleep(interval);
+                } else {
+                    let mut interval = interval;
+                    while interval > Duration::from_secs(1) {
+                        let note = format!("***** Sleeping for {}s *****", interval.as_secs());
+                        print!("\r{:^50}", note);
+                        std::io::stdout().flush().unwrap();
+                        std::thread::sleep(std::cmp::min(interval, Duration::from_secs(1)));
+
+                        let elapsed = Instant::now().duration_since(start_time);
+                        interval = target_time - elapsed;
+                    }
+                    std::thread::sleep(interval);
                 }
-                std::thread::sleep(interval);
             }
             print!("\r{1:0$}*{1:2$}", pos as usize, " ", 50 - pos as usize);
             std::io::stdout().flush().unwrap();
