@@ -24,6 +24,11 @@ struct Cli {
     #[arg(long, default_value_t = 0)]
     stop_time: u64,
 
+    /// Replace any pauses in the recording that
+    /// exceed N seconds with a 1s pause
+    #[arg(long)]
+    skip_pauses: Option<u64>,
+
     /// Path to the hid-recorder recording
     recording: PathBuf,
 }
@@ -355,18 +360,36 @@ fn hid_replay() -> Result<()> {
             break;
         }
         let start_time = Instant::now();
+        // If we skip over pauses, all events after pauses need to be offset
+        // by the pause.
+        let mut offset = Duration::from_secs(0);
         for e in &recording.events {
             let current_time = Instant::now();
             // actual time passed since we started
             let elapsed = current_time.duration_since(start_time);
             // what our recording said
-            let target_time = Duration::from_micros(e.usecs);
+            let target_time = Duration::from_micros(e.usecs) - offset;
             if target_time > elapsed {
-                let interval = target_time - elapsed;
+                let mut interval = target_time - elapsed;
+                match cli.skip_pauses {
+                    None => {}
+                    Some(skip) => {
+                        if interval > Duration::from_secs(skip) {
+                            let skip_time = Duration::from_secs(1);
+                            offset += interval - skip_time;
+                            let note = format!(
+                                "***** Skipping over pause of {}s *****",
+                                interval.as_secs()
+                            );
+                            print!("\r{:^50}", note);
+                            std::io::stdout().flush().unwrap();
+                            interval = skip_time;
+                        }
+                    }
+                }
                 if interval < Duration::from_secs(2) {
                     std::thread::sleep(interval);
                 } else {
-                    let mut interval = interval;
                     while interval > Duration::from_secs(1) {
                         let note = format!("***** Sleeping for {}s *****", interval.as_secs());
                         print!("\r{:^50}", note);
