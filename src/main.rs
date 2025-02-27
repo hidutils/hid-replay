@@ -92,6 +92,7 @@ enum Match {
     Id((u16, u16, u16)),
     ReportDescriptor(Vec<u8>),
     Event(Event),
+    Bpf,
     UnknownPrefix(char),
 }
 
@@ -138,6 +139,7 @@ fn parse_line(line: &str) -> Result<Match> {
                 bytes,
             }))
         }
+        Some(("B:", ..)) => Ok(Match::Bpf),
         Some((prefix, _)) => {
             if prefix.len() == 2 && prefix.ends_with(':') {
                 Ok(Match::UnknownPrefix(prefix.chars().next().unwrap()))
@@ -162,6 +164,7 @@ where
             Match::Id(ids) => builder.ids = Some(ids),
             Match::ReportDescriptor(rdesc) => builder.rdesc = Some(rdesc),
             Match::Event(event) => builder.events.push(event),
+            Match::Bpf => {}
             Match::UnknownPrefix(prefix) => {
                 if !warned_prefixes.iter().any(|w| *w == prefix) {
                     writeln!(
