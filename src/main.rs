@@ -24,6 +24,10 @@ struct Cli {
     #[arg(long, default_value_t = 0)]
     stop_time: u64,
 
+    /// Replay events with a fixsed interval of 12 milliseconds between events
+    #[arg(long, default_value_t = false)]
+    fast: bool,
+
     /// Replace any pauses in the recording that
     /// exceed N seconds with a 1s pause
     #[arg(long)]
@@ -371,7 +375,11 @@ fn hid_replay() -> Result<()> {
             // actual time passed since we started
             let elapsed = current_time.duration_since(start_time);
             // what our recording said
-            let target_time = Duration::from_micros(e.usecs) - offset;
+            let target_time = if cli.fast {
+                elapsed + Duration::from_millis(12)
+            } else {
+                Duration::from_micros(e.usecs) - offset
+            };
             if target_time > elapsed {
                 let mut interval = target_time - elapsed;
                 match cli.skip_pauses {
